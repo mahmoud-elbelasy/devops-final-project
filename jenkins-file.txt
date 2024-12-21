@@ -1,0 +1,50 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_HUB_CREDENTIALS = credentials('docker-cred') 
+        DOCKER_HUB_REPO = 'mahmoudbelasy/pipeline-devops-final-project'
+        IMAGE_TAG = "latest"
+    }
+    stages {
+        stage('pull code') {
+            steps {
+                git branch: 'main', credentialsId: 'github-cred', url: 'https://github.com/mahmoud-elbelasy/devops-final-project.git'
+            }
+        }
+        stage('build docker image') {
+            steps {
+                sh 'docker build -t ${DOCKER_HUB_REPO}:${IMAGE_TAG} .'
+               
+            }
+        }
+        stage('push docker image') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'docker-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh '''
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        docker push ${DOCKER_HUB_REPO}:${IMAGE_TAG}
+                        docker logout
+                    '''
+                }
+                
+                    
+            }
+        }
+        stage('run ansible playbook and run the container') {
+            steps {
+                sh 'chmod 600 keys/vm1_key'
+                sh 'chmod 600 keys/vm2_key'
+                
+                sh 'ansible-playbook -i inventory.ini playbook_test.yml'
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo "Cleaning up unused Docker images..."
+            sh 'docker system prune -f'
+        }
+    }
+}
