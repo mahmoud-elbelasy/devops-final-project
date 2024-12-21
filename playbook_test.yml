@@ -1,0 +1,57 @@
+---
+- name: update machine, install docker, pull image and run imagwe
+  hosts: vms
+  become: yes
+  tasks:
+
+    - name: Install prerequisites
+      yum:
+       name:
+          - yum-utils
+          - device-mapper-persistent-data
+          - lvm2
+       state: present
+
+    # Check if Docker is already installed
+    - name: Check if Docker is installed
+      command: docker --version
+      register: docker_installed
+      failed_when: false
+      changed_when: false
+
+    # Add Docker repository (only if Docker is not installed)
+    - name: Add Docker repository
+      get_url:
+        url: https://download.docker.com/linux/centos/docker-ce.repo
+        dest: /etc/yum.repos.d/docker-ce.repo
+      when: docker_installed.rc != 0
+
+    # Install Docker (only if Docker is not installed)
+    - name: Install Docker
+      yum:
+        name: docker-ce
+        state: present
+      when: docker_installed.rc != 0
+
+    # Start and enable Docker service
+    - name: Ensure Docker is running
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    # Pull a Docker image
+    - name: Pull Docker image
+      docker_image:
+        name: mahmoudbelasy/pipeline-devops-final-project:latest
+        source: pull
+
+    # run the container on port 5000
+    - name: run the container
+      docker_container:
+        name: flask_app
+        image: mahmoudbelasy/pipeline-devops-final-project:latest
+        state: started
+        ports:
+          - "5000:5000"
+
