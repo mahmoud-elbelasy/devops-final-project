@@ -1,52 +1,259 @@
-<p align="center">
-    <img src="https://raw.githubusercontent.com/PKief/vscode-material-icon-theme/ec559a9f6bfd399b82bb44393651661b08aaf7ba/icons/folder-markdown-open.svg" align="center" width="30%">
-</p>
-<p align="center"><h1 align="center">DEVOPS-FINAL-PROJECT</h1></p>
-<p align="center">
-	<em><code>❯ REPLACE-ME</code></em>
-</p>
-<p align="center">
-	<!-- local repository, no metadata badges. --></p>
-<p align="center">Built with the tools and technologies:</p>
-<p align="center">
-	<img src="https://img.shields.io/badge/Flask-000000.svg?style=default&logo=Flask&logoColor=white" alt="Flask">
-	<img src="https://img.shields.io/badge/HTML5-E34F26.svg?style=default&logo=HTML5&logoColor=white" alt="HTML5">
-	<img src="https://img.shields.io/badge/Docker-2496ED.svg?style=default&logo=Docker&logoColor=white" alt="Docker">
-	<img src="https://img.shields.io/badge/Python-3776AB.svg?style=default&logo=Python&logoColor=white" alt="Python">
-</p>
-<br>
+# DevOps Final Project: CI/CD Pipeline for a Python Web Application
 
-##  Table of Contents
+## Table of Contents
 
-- [ Overview](#-overview)
-- [ Features](#-features)
-- [ Project Structure](#-project-structure)
-  - [ Project Index](#-project-index)
-- [ Getting Started](#-getting-started)
-  - [ Prerequisites](#-prerequisites)
-  - [ Installation](#-installation)
-  - [ Usage](#-usage)
-  - [ Testing](#-testing)
-- [ Project Roadmap](#-project-roadmap)
-- [ Contributing](#-contributing)
-- [ License](#-license)
-- [ Acknowledgments](#-acknowledgments)
+1. [Overview](#overview)
+2. [Prerequisites](#prerequisites)
+3. [Project Setup](#project-setup)
+4. [Configure Ansible](#configure-ansible)
+5. [Usage](#usage)
+6. [Project Structure](#project-structure)
+7. [Future Improvements](#future-improvements)
 
 ---
 
-##  Overview
+## Overview
 
-<code>❯ REPLACE-ME</code>
+This project demonstrates the implementation of a CI/CD pipeline to build, deploy, and run a Python-based web application using Jenkins, Docker, Vagrant, and Ansible. The pipeline automates the following tasks:
+
+- Pulling the application code from a GitHub private repository.
+- Building and pushing a Docker image to Docker Hub.
+- Provisioning two Vagrant virtual machines as target nodes.
+- Installing Docker on the target nodes using Ansible.
+- Pulling the Docker image from Docker Hub and running the application container on both target nodes.
+
+The CI/CD pipeline ensures streamlined and efficient deployment of the application, reducing manual intervention and improving reliability. For more details, see [CI/CD Pipeline Details](#ci-cd-pipeline-details).
+
+---
+![IMG000](https://github.com/user-attachments/assets/60dc72ee-7441-4a78-a344-2f1beaad4afd)
+![Screenshot 2024-12-21 132211](https://github.com/user-attachments/assets/1f8dd26b-6330-47a1-b2c0-e7b254362ce3)
+
+
+## Prerequisites
+
+Before running this project, ensure you have the following installed:
+
+- **Git**: Version control system.
+- **Docker**: For containerization.
+- **Vagrant**: To manage virtual machines.
+- **Ansible**: For configuration management.
+- **Jenkins**: For CI/CD pipeline.
 
 ---
 
-##  Features
+## Project Setup
 
-<code>❯ REPLACE-ME</code>
+### 1. Clone the Repository
+Clone the project repository from GitHub:
+```bash
+git clone (https://github.com/mahmoud-elbelasy/devops-final-project/tree/main)
+```
+
+### 2. Dockerize the Application
+The application is containerized using the following Dockerfile:
+```dockerfile
+FROM python:3.9-slim
+
+WORKDIR /app
+
+COPY . /app
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+EXPOSE 5000
+
+CMD ["python", "app.py"]
+```
+
+Build and push the Docker image:
+```bash
+docker build -t mahmoudbelasy/web-app:latest .
+docker push mahmoudbelasy/web-app:latest
+```
+
+### 3. Vagrant Virtual Machines
+Create two Vagrant machines using the Vagrantfile.
+```ini
+Vagrant.configure("2") do |config|
+  # Base box configuration
+  base_box = "eurolinux-vagrant/centos-stream-9" # You can change this to another lightweight box
+
+  ### VM 1 ###
+  config.vm.define "vm1" do |vm1|
+    vm1.vm.box = base_box
+    vm1.vm.hostname = "vm1"
+    vm1.vm.network "private_network", ip: "192.168.56.101" # Static IP for VM 1
+    vm1.vm.provider "virtualbox" do |vb|
+      vb.memory = "600" # Minimal memory
+      vb.cpus = 1       # Minimal CPU
+    end
+  end
+
+  ### VM 2 ###
+  config.vm.define "vm2" do |vm2|
+    vm2.vm.box = base_box
+    vm2.vm.hostname = "vm2"
+    vm2.vm.network "private_network", ip: "192.168.56.102" # Static IP for VM 2
+    vm2.vm.provider "virtualbox" do |vb|
+      vb.memory = "600" # Minimal memory
+      vb.cpus = 1       # Minimal CPU
+    end
+  end
+end
+```
+
+### 4. Configure Ansible
+Ansible inventory file (`inventory.ini`):
+```ini
+[vms]
+192.168.56.101 ansible_user=vagrant ansible_private_key_file=keys/vm1_key
+192.168.56.102 ansible_user=vagrant ansible_private_key_file=keys/vm2_key
+```
+
+### 5. Ansible Playbook
+Create a playbook (`deploy.yml`) to:
+- Install Docker on the target machines.
+- Pull the Docker image from Docker Hub.
+- Run the container on the target machines.
+```yaml
+---
+- name: update machine, install docker, pull image and run image
+  hosts: vms
+  become: yes
+  tasks:
+
+    - name: Install prerequisites
+      yum:
+       name:
+          - yum-utils
+          - device-mapper-persistent-data
+          - lvm2
+       state: present
+
+    # Check if Docker is already installed
+    - name: Check if Docker is installed
+      command: docker --version
+      register: docker_installed
+      failed_when: false
+      changed_when: false
+
+    # Add Docker repository (only if Docker is not installed)
+    - name: Add Docker repository
+      get_url:
+        url: https://download.docker.com/linux/centos/docker-ce.repo
+        dest: /etc/yum.repos.d/docker-ce.repo
+      when: docker_installed.rc != 0
+
+    # Install Docker (only if Docker is not installed)
+    - name: Install Docker
+      yum:
+        name: docker-ce
+        state: present
+      when: docker_installed.rc != 0
+
+    # Start and enable Docker service
+    - name: Ensure Docker is running
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    # Pull a Docker image
+    - name: Pull Docker image
+      docker_image:
+        name: mahmoudbelasy/pipeline-devops-final-project:latest
+        source: pull
+
+    # Run the container on port 5000
+    - name: Run the container
+      docker_container:
+        name: flask_app
+        image: mahmoudbelasy/pipeline-devops-final-project:latest
+        state: started
+        ports:
+          - "5000:5000"
+```
+---
+
+## CI/CD Pipeline Details
+
+### Jenkins Pipeline
+
+The Jenkinsfile contains the following stages:
+1. **Clone Repository**: Pull the code from the GitHub repository.
+2. **Build Docker Image**: Build the Docker image using the provided Dockerfile.
+3. **Push Docker Image**: Push the image to Docker Hub.
+4. **Run Ansible Playbook**:
+    - Install Docker on the Vagrant nodes.
+    - Pull and run the Docker container.
+
+Example Jenkins pipeline code:
+```groovy
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_HUB_CREDENTIALS = credentials('docker-cred') 
+        DOCKER_HUB_REPO = 'mahmoudbelasy/pipeline-devops-final-project'
+        IMAGE_TAG = "latest"
+    }
+    stages {
+        stage('pull code') {
+            steps {
+                git branch: 'main', credentialsId: 'github-cred', url: 'https://github.com/mahmoud-elbelasy/devops-final-project.git'
+            }
+        }
+        stage('build docker image') {
+            steps {
+                sh 'docker build -t ${DOCKER_HUB_REPO}:${IMAGE_TAG} .'
+               
+            }
+        }
+        stage('push docker image') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'docker-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh '''
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        docker push ${DOCKER_HUB_REPO}:${IMAGE_TAG}
+                        docker logout
+                    '''
+                }
+            }
+        }
+        stage('run ansible playbook and run the container') {
+            steps {
+                sh 'chmod 600 keys/vm1_key'
+                sh 'chmod 600 keys/vm2_key'
+                
+                sh 'ansible-playbook -i inventory.ini playbook_test.yml'
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo "Cleaning up unused Docker images..."
+            sh 'docker system prune -f'
+        }
+    }
+}
+```
+
+![photo_2024-12-24_06-58-36](https://github.com/user-attachments/assets/77c59905-a87d-4720-8531-c5edc0629b59)
 
 ---
 
-##  Project Structure
+## Usage
+
+1. **Start Jenkins**: Run Jenkins on your local machine or server.
+2. **Create a Jenkins Job**:
+   - Use the provided `Jenkinsfile` as the pipeline script.
+   - Add necessary credentials for GitHub and Docker Hub.
+3. **Run the Pipeline**: Trigger the pipeline to automate the application deployment.
+
+---
+
+## Project Structure
 
 ```sh
 └── devops-final-project/
@@ -66,205 +273,13 @@
         └── weather.html
 ```
 
-
-###  Project Index
-<details open>
-	<summary><b><code>C:\USERS\MAHMO\DOCUMENTS\DEVOPS-FINAL-PROJECT/</code></b></summary>
-	<details> <!-- __root__ Submodule -->
-		<summary><b>__root__</b></summary>
-		<blockquote>
-			<table>
-			<tr>
-				<td><b><a href='C:\Users\mahmo\Documents\devops-final-project/blob/master/app.py'>app.py</a></b></td>
-				<td><code>❯ REPLACE-ME</code></td>
-			</tr>
-			<tr>
-				<td><b><a href='C:\Users\mahmo\Documents\devops-final-project/blob/master/Dockerfile'>Dockerfile</a></b></td>
-				<td><code>❯ REPLACE-ME</code></td>
-			</tr>
-			<tr>
-				<td><b><a href='C:\Users\mahmo\Documents\devops-final-project/blob/master/inventory.ini'>inventory.ini</a></b></td>
-				<td><code>❯ REPLACE-ME</code></td>
-			</tr>
-			<tr>
-				<td><b><a href='C:\Users\mahmo\Documents\devops-final-project/blob/master/jenkins-file.txt'>jenkins-file.txt</a></b></td>
-				<td><code>❯ REPLACE-ME</code></td>
-			</tr>
-			<tr>
-				<td><b><a href='C:\Users\mahmo\Documents\devops-final-project/blob/master/playbook_test.yml'>playbook_test.yml</a></b></td>
-				<td><code>❯ REPLACE-ME</code></td>
-			</tr>
-			<tr>
-				<td><b><a href='C:\Users\mahmo\Documents\devops-final-project/blob/master/requirements.txt'>requirements.txt</a></b></td>
-				<td><code>❯ REPLACE-ME</code></td>
-			</tr>
-			</table>
-		</blockquote>
-	</details>
-	<details> <!-- keys Submodule -->
-		<summary><b>keys</b></summary>
-		<blockquote>
-			<table>
-			<tr>
-				<td><b><a href='C:\Users\mahmo\Documents\devops-final-project/blob/master/keys\vm1_key'>vm1_key</a></b></td>
-				<td><code>❯ REPLACE-ME</code></td>
-			</tr>
-			<tr>
-				<td><b><a href='C:\Users\mahmo\Documents\devops-final-project/blob/master/keys\vm2_key'>vm2_key</a></b></td>
-				<td><code>❯ REPLACE-ME</code></td>
-			</tr>
-			</table>
-		</blockquote>
-	</details>
-	<details> <!-- templates Submodule -->
-		<summary><b>templates</b></summary>
-		<blockquote>
-			<table>
-			<tr>
-				<td><b><a href='C:\Users\mahmo\Documents\devops-final-project/blob/master/templates\index.html'>index.html</a></b></td>
-				<td><code>❯ REPLACE-ME</code></td>
-			</tr>
-			<tr>
-				<td><b><a href='C:\Users\mahmo\Documents\devops-final-project/blob/master/templates\weather.html'>weather.html</a></b></td>
-				<td><code>❯ REPLACE-ME</code></td>
-			</tr>
-			</table>
-		</blockquote>
-	</details>
-</details>
-
----
-##  Getting Started
-
-###  Prerequisites
-
-Before getting started with devops-final-project, ensure your runtime environment meets the following requirements:
-
-- **Programming Language:** Error detecting primary_language: {'py': 1, 'ini': 1, 'txt': 2, 'yml': 1, 'html': 2}
-- **Package Manager:** Pip
-- **Container Runtime:** Docker
-
-
-###  Installation
-
-Install devops-final-project using one of the following methods:
-
-**Build from source:**
-
-1. Clone the devops-final-project repository:
-```sh
-❯ git clone ../devops-final-project
-```
-
-2. Navigate to the project directory:
-```sh
-❯ cd devops-final-project
-```
-
-3. Install the project dependencies:
-
-
-**Using `pip`** &nbsp; [<img align="center" src="" />]()
-
-```sh
-❯ echo 'INSERT-INSTALL-COMMAND-HERE'
-```
-
-
-**Using `docker`** &nbsp; [<img align="center" src="https://img.shields.io/badge/Docker-2CA5E0.svg?style={badge_style}&logo=docker&logoColor=white" />](https://www.docker.com/)
-
-```sh
-❯ docker build -t Documents/devops-final-project .
-```
-
-
-
-
-###  Usage
-Run devops-final-project using the following command:
-**Using `pip`** &nbsp; [<img align="center" src="" />]()
-
-```sh
-❯ echo 'INSERT-RUN-COMMAND-HERE'
-```
-
-
-**Using `docker`** &nbsp; [<img align="center" src="https://img.shields.io/badge/Docker-2CA5E0.svg?style={badge_style}&logo=docker&logoColor=white" />](https://www.docker.com/)
-
-```sh
-❯ docker run -it {image_name}
-```
-
-
-###  Testing
-Run the test suite using the following command:
-**Using `pip`** &nbsp; [<img align="center" src="" />]()
-
-```sh
-❯ echo 'INSERT-TEST-COMMAND-HERE'
-```
-
-
----
-##  Project Roadmap
-
-- [X] **`Task 1`**: <strike>Implement feature one.</strike>
-- [ ] **`Task 2`**: Implement feature two.
-- [ ] **`Task 3`**: Implement feature three.
-
 ---
 
-##  Contributing
+## Future Improvements
 
-- **💬 [Join the Discussions](https://LOCAL/Documents/devops-final-project/discussions)**: Share your insights, provide feedback, or ask questions.
-- **🐛 [Report Issues](https://LOCAL/Documents/devops-final-project/issues)**: Submit bugs found or log feature requests for the `devops-final-project` project.
-- **💡 [Submit Pull Requests](https://LOCAL/Documents/devops-final-project/blob/main/CONTRIBUTING.md)**: Review open PRs, and submit your own PRs.
-
-<details closed>
-<summary>Contributing Guidelines</summary>
-
-1. **Fork the Repository**: Start by forking the project repository to your LOCAL account.
-2. **Clone Locally**: Clone the forked repository to your local machine using a git client.
-   ```sh
-   git clone C:\Users\mahmo\Documents\devops-final-project
-   ```
-3. **Create a New Branch**: Always work on a new branch, giving it a descriptive name.
-   ```sh
-   git checkout -b new-feature-x
-   ```
-4. **Make Your Changes**: Develop and test your changes locally.
-5. **Commit Your Changes**: Commit with a clear message describing your updates.
-   ```sh
-   git commit -m 'Implemented new feature x.'
-   ```
-6. **Push to LOCAL**: Push the changes to your forked repository.
-   ```sh
-   git push origin new-feature-x
-   ```
-7. **Submit a Pull Request**: Create a PR against the original project repository. Clearly describe the changes and their motivations.
-8. **Review**: Once your PR is reviewed and approved, it will be merged into the main branch. Congratulations on your contribution!
-</details>
-
-<details closed>
-<summary>Contributor Graph</summary>
-<br>
-<p align="left">
-   <a href="https://LOCAL{/Documents/devops-final-project/}graphs/contributors">
-      <img src="https://contrib.rocks/image?repo=Documents/devops-final-project">
-   </a>
-</p>
-</details>
-
----
-
-##  License
-
-This project is protected under the [SELECT-A-LICENSE](https://choosealicense.com/licenses) License. For more details, refer to the [LICENSE](https://choosealicense.com/licenses/) file.
-
----
-
-##  Acknowledgments
-
-- List any resources, contributors, inspiration, etc. here.
+- Implement health checks for the deployed containers.
+- Automate the creation of Vagrant nodes using a script.
+- Set up monitoring tools like Prometheus and Grafana.
+- Add rollback mechanisms in case of deployment failure.
 
 ---
